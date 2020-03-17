@@ -5,6 +5,53 @@
 
   tasks:
 
+  - name: Install chrony 
+    dnf:
+      name: chrony 
+      state: latest
+
+  - name: copy client
+    template:
+      src: 'template/ntp-client.conf.j2'
+      dest: '/etc/chrony.conf'
+      owner: root
+      group: root
+      mode: 0755 
+      
+  - name: copy server
+    template:
+      src: 'template/ntp-server.conf.j2'
+      dest: '/etc/chrony.conf'
+      owner: root
+      group: root
+      mode: 0755
+    when: ansible_connection == 'local'
+
+  - name: Start firewall
+    service:
+      name: firewalld
+      state: started
+
+  - name: open firewall
+    firewalld:
+      service: ntp
+      permanent: yes
+      state: enabled
+
+  - name: Restart firewall
+    service:
+      name: firewalld
+      state: restarted
+
+  - name: Start chrony service
+    service:
+      name: chronyd
+      state: restarted
+
+  - name: set time zone to Asia/Bangkok
+    timezone:
+      name: Asia/Bangkok
+
   - name: Copy resolv file nameserver
     template:
       src: template/resolv-mgn.conf.j2

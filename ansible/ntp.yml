@@ -2,58 +2,51 @@
 - hosts: all
   become: yes
   become_user: root
- 
+
   tasks:
-- name: start chronyd
-  shell:
-    cmd: systemctl start chronyd
+  - name: Install chrony 
+    dnf:
+      name: chrony 
+      state: latest
 
-- name: Status chrony
-  shell:
-    cmd: systemctl status chronyd
+  - name: copy client
+    template:
+      src: 'ntp-client.conf.j2'
+      dest: '/etc/chrony.conf'
+      owner: root
+      group: root
+      mode: 0755 
+      
+  - name: copy server
+    template:
+      src: 'ntp-server.conf.j2'
+      dest: '/etc/chrony.conf'
+      owner: root
+      group: root
+      mode: 0755
+    when: ansible_connection == 'local'
 
-- name: Enable chronyd
-  shell: 
-   cmd: systemctl enable chronyd
+  - name: Start firewall
+    service:
+      name: firewalld
+      state: started
 
-- name: Copy chrony-server conf
-  template:
-    src: '{{ item.source }}'
-    dest: '{{ item.destination }}'
-    owner: root
-    group: root 
-    mode: "0755"
-    force: yes
-  loop:
-   - { source: 'template/chrony-server.j2' , destination: '/etc/chrony.conf'}
-  when: ansible_connection == 'local'
+  - name: open firewall
+    firewalld:
+      service: ntp
+      permanent: yes
+      state: enabled
 
-- name: Set Ntp
-  shell:
-    cmd: timedatectl set-ntp true
-  when: ansible_connection == 'local'
+  - name: Restart firewall
+    service:
+      name: firewalld
+      state: restarted
 
-- name: Set time zone to bangkok
-  shell:
-    cmd: timedatectl set-timezone Asia/Bangkok
-  when: ansible_connection == 'local'
+  - name: Start chrony service
+    service:
+      name: chronyd
+      state: restarted
 
-- name: restart chrond
-  shell:
-   cmd: systemctl restart chronyd
-  when: ansible_connection == 'local'
-
-- name: start fire wall
-  shell:
-    cmd: systemctl start firewalld
-  when: ansible_connection == 'local'
-
-- name:  open firewall 
-  shell:
-    cmd:  firewall-cmd --add-service=ntp ---permanent
-  when: ansible_connection == 'local'
-  
-- name: relode fire wall
-  shell:
-   cmd: firewall-cmd --reload
-  when: ansible_connection == 'local'
+  - name: set time zone to Asia/Bangkok
+    timezone:
+      name: Asia/Bangkok

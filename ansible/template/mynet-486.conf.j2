@@ -1,0 +1,14 @@
+upstream captain {
+ server 192.168.100.81;
+ server 192.168.100.82;
+}
+
+server {
+  listen 80;
+  access_log syslog:server=192.168.100.11:514,facility=local7,tag=nginx,severity=info; 
+  server_name captain.com www.captain.com;
+  proxy_set_header Host $http_host;
+  location / {
+    proxy_pass http://captain;
+  }
+}

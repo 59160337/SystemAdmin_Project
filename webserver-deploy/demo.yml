@@ -1,0 +1,8 @@
+---
+- hosts: server-01
+  become: yes
+  become_user: root
+
+  roles:
+    - common
+    - deploy-httpd-php

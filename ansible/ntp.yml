@@ -1,0 +1,59 @@
+---
+- hosts: all
+  become: yes
+  become_user: root
+ 
+  tasks:
+- name: start chronyd
+  shell:
+    cmd: systemctl start chronyd
+
+- name: Status chrony
+  shell:
+    cmd: systemctl status chronyd
+
+- name: Enable chronyd
+  shell: 
+   cmd: systemctl enable chronyd
+
+- name: Copy chrony-server conf
+  template:
+    src: '{{ item.source }}'
+    dest: '{{ item.destination }}'
+    owner: root
+    group: root 
+    mode: "0755"
+    force: yes
+  loop:
+   - { source: 'template/chrony-server.j2' , destination: '/etc/chrony.conf'}
+  when: ansible_connection == 'local'
+
+- name: Set Ntp
+  shell:
+    cmd: timedatectl set-ntp true
+  when: ansible_connection == 'local'
+
+- name: Set time zone to bangkok
+  shell:
+    cmd: timedatectl set-timezone Asia/Bangkok
+  when: ansible_connection == 'local'
+
+- name: restart chrond
+  shell:
+   cmd: systemctl restart chronyd
+  when: ansible_connection == 'local'
+
+- name: start fire wall
+  shell:
+    cmd: systemctl start firewalld
+  when: ansible_connection == 'local'
+
+- name:  open firewall 
+  shell:
+    cmd:  firewall-cmd --add-service=ntp ---permanent
+  when: ansible_connection == 'local'
+  
+- name: relode fire wall
+  shell:
+   cmd: firewall-cmd --reload
+  when: ansible_connection == 'local'

@@ -1,0 +1,8 @@
+ansible-mgn ansible_connection=local
+server-01 ansible_ssh_host=192.168.100.80
+server-02 ansible_ssh_host=192.168.100.81
+server-03 ansible_ssh_host=192.168.100.82
+server-04 ansible_ssh_host=192.168.100.70
+
+[myservers]
+server-[01:04]

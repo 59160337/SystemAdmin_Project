@@ -1,0 +1,11 @@
+---
+# handlers file for deploy-httpd-php
+  - name: restart firewalld
+    service: 
+      name: firewalld 
+      state: restarted
+
+  - name: restart httpd
+    service: 
+      name: httpd 
+      state: restarted

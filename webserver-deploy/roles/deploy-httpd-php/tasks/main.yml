@@ -1,0 +1,58 @@
+---
+# tasks file for deploy-httpd-php
+  - name: Install httpd and php and php module
+    yum:
+      name: 
+        - httpd
+        - php 
+        - php-cli
+        - php-fpm
+        - php-mysqlnd
+        - php-zip
+        - php-devel 
+        - php-gd
+        - php-mcrypt
+        - php-mbstring 
+        - php-curl
+        - php-xml
+        - php-pear
+        - php-bcmath
+        - php-json
+      state: latest
+      enablerepo: remi-php{{ php_version }}
+
+  - name: Enable service httpd
+    service:
+      name: httpd
+      enabled: yes
+
+  - name: Start httpd Service
+    service: 
+      name: httpd 
+      state: started
+
+  - name: Open firewall service http and https
+    firewalld: 
+      service: '{{ item }}'
+      permanent: yes 
+      state: enabled
+    loop:
+      - "http"
+      - "https"
+    notify: restart firewalld
+
+  - name: Edit timezone in php.ini
+    lineinfile: 
+      path: /etc/php.ini 
+      regexp: ';date.timezone' 
+      line: 'date.timezone = Asia/Bangkok' 
+      backup: yes
+    notify: restart httpd
+
+  - name: Copy index.php to web server
+    template:
+      src: 'templates/index.php.j2'
+      dest: '/var/www/html/index.php'
+      owner: root
+      group: root
+      mode: "0755"

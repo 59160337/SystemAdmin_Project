@@ -1,0 +1,655 @@
+---
+- hosts: all
+  become: yes
+  become_user: root
+
+  tasks:
+
+  - name: Copy resolv file nameserver
+    template:
+      src: template/resolv-mgn.conf.j2
+      dest: /etc/resolv.conf
+      owner: root
+      group: root
+
+  - name: Install Bind at ansible-mgn
+    dnf: 
+      name: bind 
+      state: latest
+    when: ansible_connection == 'local'
+
+  - name: Edit nameserver listen IP Address
+    lineinfile:
+      path: /etc/named.conf
+      regexp: 'listen-on port 53 { 127.0.0.1; };'
+      line: '        listen-on port 53 { 127.0.0.1; 192.168.100.11;};'
+      backup: yes
+    when: ansible_connection == 'local'
+
+  - name : Edit nameserver allow query
+    lineinfile:
+      path: /etc/named.conf
+      regexp: 'allow-query     { localhost; };'
+      line: '        allow-query   { any; };'
+      backup: yes
+    when: ansible_connection == 'local'
+
+  - name : Include named local
+    lineinfile:
+      path: /etc/named.conf
+      line: 'include  "/etc/named/named.conf.local";'
+      backup: yes
+    when: ansible_connection == 'local'
+
+  - name : Copy named.con.local file
+    template:
+      src: template/named.conf.local.j2
+      dest: /etc/named/named.conf.local
+      owner: root
+      group: root 
+      mode: 0755 
+      backup: yes
+    when: ansible_connection == 'local'
+
+  - name : Create Zones Directory in /etc/named
+    file:
+      path: /etc/named/zones
+      state: directory
+      mode: 0755  
+    when: ansible_connection == 'local'  
+
+  - name : Create Zones Directory in /etc/named
+    template:
+      src: '{{ item.source }}'
+      dest: '{{ item.destination }}'
+      owner: root
+      group: root      
+      mode: 0755  
+    loop:
+    - { source: 'template/db.mynet-486.com.j2', destination: '/etc/named/zones/db.captain.com' }
+    - { source: 'template/db.192.168.100.j2', destination: '/etc/named/zones/db.192.168.100' }
+    when: ansible_connection == 'local'  
+  
+  - name : Start Service
+    service:
+      name: named
+      state: started 
+    when: ansible_connection == 'local'
+
+  - name: Install firewalld
+    dnf: 
+      name: firewalld 
+      state: latest
+    when: ansible_connection == 'local'
+
+  - name: Start firewalld
+    service: 
+      name: firewalld 
+      state: started
+    when: ansible_connection == 'local' 
+
+  - name: Open firewall
+    firewalld: 
+      port: '{{ item }}'
+      permanent: yes 
+      state: enabled
+    loop: 
+    - "53/udp"
+    - "53/tcp"
+    when: ansible_connection == 'local' 
+
+  - name: Restart firewalld
+    service: 
+      name: firewalld 
+      state: restarted
+    when: ansible_connection == 'local'
+
+  - name:  Resolv template 
+    template: 
+      src: template/resolv.conf.j2
+      dest: /etc/resolv.conf
+      owner: root
+      group: root      
+      mode: "0644"
+
+  - name: Install Bind-util 
+    dnf: 
+      name: bind-utils 
+      state: latest
+
+  - name: Check
+    command: nslookup ansible-mgn.captain.com
+    register: myoutput
+  - debug: msg="{{ myoutput.stdout }}" 
+
+
+- hosts: db
+  become: yes
+  become_user: root
+  tasks:
+  - name: Install marai
+    dnf:
+      name: mariadb-server
+      state: latest
+
+  - name: Enable  Maria
+    service: 
+      name: mariadb
+      enabled: yes
+
+  - name: Start Maria
+    service: 
+      name: mariadb 
+      state: started
+  
+  - name: Install NFS
+    dnf:
+      name: nfs-utils
+      state: latest
+  
+  - name : Include NFS share
+    lineinfile:
+      path: /etc/exports
+      line: '/var/nfs *(rw,sync,no_root_squash,no_all_squash)'
+      backup: yes
+
+  - name: Create directory nfs
+    file: 
+      path: /var/nfs
+      state: directory
+      owner: root
+      group: root
+      mode: 0755
+
+  - name: Create directory www
+    file: 
+      path: /var/nfs/{{ item }}
+      state: directory
+      owner: root
+      group: root
+      mode: 0755
+    loop:
+      - captain.com/html
+      - captain.com/log
+
+  - name: Enable rpcbind
+    service: 
+      name: rpcbind 
+      enabled: yes
+
+  - name: Enable nfs-server
+    service: 
+      name: nfs-server
+      enabled: yes
+
+  # - name: Enable nfs-lock
+  #   service: 
+  #     name: nfs-lock
+  #     enabled: yes
+  
+  - name: Start rpcbind
+    service: 
+      name: rpcbind
+      state: started
+  
+  - name: Start nfs-server
+    service: 
+      name: nfs-server
+      state: started
+
+  # - name: Start nfs-lock
+  #   service: 
+  #     name: nfs-lock
+  #     state: started
+
+  - name: Install firewalld
+    dnf: 
+      name: firewalld 
+      state: latest
+
+  - name: Enable firewalld
+    service: 
+      name: firewalld 
+      enabled: yes
+
+  - name: Start firewalld
+    service: 
+      name: firewalld 
+      state: started
+
+  - name: Open firewall
+    firewalld: 
+      port: "3306/tcp"
+      permanent: yes 
+      state: enabled
+
+  - name: Open nfs,mountd,rpc
+    firewalld: 
+      service: '{{ item }}'
+      permanent: yes 
+      state: enabled
+    loop:
+    - nfs
+    - mountd
+    - rpc-bind
+
+  - name: Restart firewalld
+    service: 
+      name: firewalld 
+      state: restarted 
+  
+  - name: php mynet
+    template:
+      src: template/index.php.j2
+      dest: /var/nfs/captain.com/html/index.php
+
+- hosts: web
+  become: yes
+  become_user: root
+  tasks:
+  - name: Install remi repo.
+    dnf:
+      name:  http://rpms.remirepo.net/enterprise/remi-release-8.rpm 
+      state: latest
+
+  - name: Import remi GPG key.
+    rpm_key:
+      key: http://rpms.remirepo.net/RPM-GPG-KEY-remi
+      state: present
+
+  - name: Install php
+    dnf:
+      name: 
+        - httpd
+        - php
+        - php-cli 
+        - php-fpm 
+        - php-mysqlnd 
+        - php-zip 
+        - php-devel 
+        - php-gd 
+        - php73-php-pecl-mcrypt
+        - php-mbstring 
+        - php-curl 
+        - php-xml 
+        - php-pear 
+        - php-bcmath 
+        - php-json
+      state: latest
+      enablerepo: remi-php73
+  
+  - name: Edit time zone
+    lineinfile:
+      path: /etc/php.ini
+      regexp: ';date.timezone'
+      line: 'date.timezone = Asia/Bangkok'
+      backup: yes
+
+  
+  - name : Create Zones Directory in /etc/named
+    template:
+      src: template/enablevhost.conf.j2
+      dest: /etc/httpd/conf/enablevhost.conf
+      owner: root
+      group: root      
+      mode: 0755 
+  
+  - name: Install nfs-utils
+    dnf:
+      name: nfs-utils
+      state: latest
+
+  - name: Start nfs-server
+    service: 
+      name: nfs-server
+      state: started
+
+  - name: Create directory nfs/www
+    file: 
+      path: /var/nfs/www
+      state: directory
+      mode: 0755
+      
+  - name : Create html.log web1
+    template:
+      src: template/server01mynet-486.com.conf.j2
+      dest: /etc/httpd/conf.d/captain.com.conf
+      owner: root
+      group: root      
+      mode: 0755  
+    when: ansible_ssh_host == '192.168.100.81'
+  
+  - name : Create html.log web2
+    template:
+      src:  template/server01mynet-486.com.conf.j2
+      dest: /etc/httpd/conf.d/captain.com.conf
+      owner: root
+      group: root      
+      mode: 0755  
+    when: ansible_ssh_host == '192.168.100.82'
+  
+  
+     
+  - name: Enable Apache
+    service: 
+      name: httpd
+      enabled: yes
+      
+  - name: Mount
+    command: mount 192.168.100.70:/var/nfs /var/nfs/www
+
+  - name: Start Apache
+    service: 
+      name: httpd
+      state: started
+
+  
+  - name: Install firewalld
+    dnf: 
+      name: firewalld 
+      state: latest
+
+  - name: Enable firewalld
+    service: 
+      name: firewalld 
+      enabled: yes
+
+  - name: Start firewalld
+    service: 
+      name: firewalld 
+      state: started
+
+  - name: Open firewall
+    firewalld: 
+      port: '{{ item }}'
+      permanent: yes 
+      state: enabled
+    loop: 
+    - "80/tcp"
+    - "443/tcp"
+
+  - name: Restart firewalld
+    service: 
+      name: firewalld 
+      state: restarted
+
+  - name:  index template 
+    template: 
+      src: template/index.php.j2
+      dest: /var/www/html/index.php
+      owner: root
+      group: root      
+      mode: "0755"
+        
+  - name: Restart Apache
+    service: 
+      name: httpd
+      state: restarted
+
+- hosts: lb
+  become: yes
+  become_user: root
+  tasks:
+
+  - name: Install nginx
+    dnf:
+      name: nginx
+      state: latest
+  
+  - name: Start nginx
+    service: 
+      name: nginx
+      state: started
+
+  - name: Template mynet to /etc/nginx/conf.d
+    template:
+      src: template/mynet-486.conf.j2
+      dest: /etc/nginx/conf.d/captain.conf
+  - name: Install firewalld
+    dnf: 
+      name: firewalld 
+      state: latest
+
+  - name: Enable firewalld
+    service: 
+      name: firewalld 
+      enabled: yes
+
+  - name: Start firewalld
+    service: 
+      name: firewalld 
+      state: started
+
+  - name: Open firewall
+    firewalld: 
+      port: '{{ item }}'
+      permanent: yes 
+      state: enabled
+    loop: 
+    - "80/tcp"
+    - "443/tcp"
+  - name: Restart firewalld
+    service: 
+      name: firewalld 
+      state: restarted
+      
+  - name: Restart nginx
+    service: 
+      name: nginx
+      state: restarted
+      
+- hosts: all
+  become: yes
+  become_user: root
+
+  tasks:
+  - name: Install rsyslog
+    dnf:
+      name: rsyslog
+      state: latest
+
+  - name: start rsyslog
+    service:
+      name: rsyslog
+      state: started
+
+  - name: Enable rsyslog
+    service: 
+      name: rsyslog 
+      enabled: yes
+
+  - name : Syslog 
+    template:
+      src: template/syslog.conf.j2
+      dest: /etc/rsyslog.conf
+      owner: root
+      group: root      
+      mode: 0755 
+    when: ansible_connection == 'local'
+
+  - name: Install firewalld
+    dnf: 
+      name: firewalld 
+      state: latest
+    when: ansible_connection == 'local'
+
+  - name: Enable firewalld
+    service: 
+      name: firewalld 
+      enabled: yes
+    when: ansible_connection == 'local'
+
+  - name: Start firewalld
+    service: 
+      name: firewalld 
+      state: started
+    when: ansible_connection == 'local'
+
+  - name: Open firewall
+    firewalld: 
+      port: '{{ item }}'
+      permanent: yes 
+      state: enabled
+    loop: 
+    - "514/tcp"
+    - "514/udp"
+    when: ansible_connection == 'local'
+  - name: Restart firewalld
+    service: 
+      name: firewalld 
+      state: restarted
+    when: ansible_connection == 'local'
+  - name: restart rsyslog
+    service:
+      name: rsyslog
+      state: restarted
+    when: ansible_connection == 'local'
+
+- hosts: myserver
+  become: yes
+  become_user: root
+  tasks:
+  - name: Install rsyslog
+    dnf:
+      name: rsyslog
+      state: latest
+
+  - name: start rsyslog
+    service:
+      name: rsyslog
+      state: started
+  - name: Enable rsyslog
+    service: 
+      name: rsyslog 
+      enabled: yes
+  - name: Edit /etc/rsyslog.conf
+    lineinfile:
+      path: /etc/rsyslog.conf
+      regexp: '#*.* @@remote-host:514'
+      line: '*.* @192.168.100.11:514'
+      backup: yes
+  - name: Install firewalld
+    dnf: 
+      name: firewalld 
+      state: latest
+    
+
+  - name: Enable firewalld
+    service: 
+      name: firewalld 
+      enabled: yes
+    
+
+  - name: Start firewalld
+    service: 
+      name: firewalld 
+      state: started
+    
+
+  - name: Open firewall
+    firewalld: 
+      port: '{{ item }}'
+      permanent: yes 
+      state: enabled
+    loop: 
+    - "514/tcp"
+    - "514/udp"
+    
+  - name: Restart firewalld
+    service: 
+      name: firewalld 
+      state: restarted
+    
+  - name: restart rsyslog
+    service:
+      name: rsyslog
+      state: restarted
+
+
+
+  ####################################
+
+  # จัดการเรื่องการสร้าง database ไว้สำหรับทำ Wordpress 
+
+- hosts: db
+  become: yes
+  become_user: root
+  vars:
+    mysql_root_password: 123456 #password for login database
+  tasks:
+  - name: Install the Python MySQL Support Libraries
+    package:
+      name: 
+      - python3-PyMySQL 
+      state: latest
+
+# ตรงนี้คือตั้งค่า client ที่จะ login กับ database ของเราได้
+  - name: update mysql root password for all root accounts
+    mysql_user:
+      name: root
+      host: "{{ item }}"
+      password: "{{ mysql_root_password }}"
+      login_user: root
+      login_password: "{{ mysql_root_password }}"
+      check_implicit_admin: yes
+      priv: "*.*:ALL,GRANT"
+    with_items:
+      - "{{ ansible_hostname }}"
+      - 127.0.0.1
+      - ::1
+      - localhost
+      - 192.168.100.81
+      - 192.168.100.82
+      
+  - name: Create DB
+    mysql_db: 
+      name: project  #Database Name
+      state: present 
+      login_user: root 
+      login_password: "{{ mysql_root_password }}"
+
+  - name: Import tables to database  
+    mysql_db:
+      name: project
+      state: import
+      login_user: root 
+      login_password: "{{ mysql_root_password }}"
+      target: /vagrant/ansible/captain/database/project.sql
+
+  - name: restart firewalld
+    service:
+      name: firewalld
+      state: restarted
+
+# ------------------------------------------------------------------------------------------------
+
+# จัดการดาวโหลด wordpress และแตกไฟล์ wordpress 
+# แล้วเอาข้อมูลของ wordpress ไปไว้ที่ตำแหน่งของ webserver ของ domain(DNS) ที่เราตั้งขึ้นมาเอง captain.com
+
+- hosts: web
+  become: yes
+  become_user: root
+  tasks:
+  
+  - name: copy file wordpress to web path directory
+    command: rsync -a /vagrant/ansible/captain/database/html /var/nfs/www/captain.com/
+
+  - name: chang permission directory captain web
+    command: chown -R root:root /var/nfs/www/captain.com/html
+    args:
+      warn: false
+
+  - name: chang permission directory captain web
+    command: chmod -R 755 /var/nfs/www/captain.com/html
+    args:
+      warn: false
+
+  - name: Restart service httpd
+    service:
+      name: httpd
+      state: restarted
+
+
+
+  
+    

@@ -1,0 +1,123 @@
+--- 
+- hosts: db 
+  become: yes
+  become_user: root
+  tasks:
+
+#------------- db -----------------------
+  - name: Install mariadb
+    dnf:
+      name: 
+      - mariadb-server
+      - python3-PyMySQL
+      state: latest
+
+  - name: start and enable mariadb
+    service:
+      name: mariadb
+      state: started
+      enabled: yes
+
+  - name: set user to web server
+    mysql_user:
+      name: root
+      host: "{{ item }}"      
+      password: "123456"
+      priv: '*.*:ALL,GRANT'
+      state : present
+    loop:
+      - localhost
+      - 192.168.100.80
+      - 192.168.100.81
+      - 192.168.100.82
+      - 192.168.100.70
+    
+## create databases ----------------------------------
+  - name: Create a new database with name 'nattawattour'
+    mysql_db:
+      name: database
+      state: present
+
+  - name: Import tables to database  
+    mysql_db:
+      name: root
+      state: import
+      login_user: root 
+      login_password: "{{ 123456 }}"
+      target: /vagrant/ansible/captain/database/project.sql
+
+  - name: restart
+    service:
+      name: mariadb
+      state: restarted
+
+  
+  - name: start and enable firewalld
+    service:
+      name: firewalld
+      enabled: yes
+      state: started
+
+  - name: Open port tcp
+    firewalld:
+      port: '3306/tcp'
+      permanent: yes
+      state: enabled
+
+#------------- nfs -----------------------
+
+  - name: Install nfs
+    dnf:
+      name: nfs-utils
+      state: latest
+
+  - name: Edit /etc/exports
+    template:
+      src: exports.j2
+      dest : /etc/exports
+      owner: root
+      group: root
+      mode: "0755"
+
+  - name: Create dir
+    file:
+      path: '/data/nattawattour'
+      state: directory
+
+  - name: enable rpcbind nfs-server
+    service:
+      name: '{{ item }}'
+      state: started
+      enabled: yes
+    loop:
+        - rpcbind
+        - nfs-server
+ 
+  - name: Open firewall service http and https
+    firewalld:
+        service: '{{ item }}'
+        permanent: yes
+        state: enabled
+    loop:
+        - "nfs"
+        - "mountd"
+        - "rpc-bind"
+        - "nfs3"
+
+  - name: restart  firewalld
+    service:
+      name: firewalld
+      state: restarted
+
+  - name: create index1
+    template:
+      src: index1.php
+      dest : /data/nattawattour/index.php
+      owner: root
+      group: root
+      mode: "0755"
+
+  
+
+ 
+

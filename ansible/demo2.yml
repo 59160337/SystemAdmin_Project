@@ -1,0 +1,99 @@
+- hosts: db ## nfs server and database server [12]
+  become: yes
+  become_user: root
+  tasks:
+
+#------------- db -----------------------
+  - name: Install mariadb
+    dnf:
+      name: 
+      - mariadb-server
+      - python3-PyMySQL
+      state: latest
+
+  - name: start and enable mariadb
+    service:
+      name: mariadb
+      state: started
+      enabled: yes
+
+  - name: set user to web server
+    mysql_user:
+      name: myuser
+      host: "{{ item }}"      
+      password: "123456"
+      priv: '*.*:ALL,GRANT'
+      state : present
+    loop:
+      - localhost
+      - 192.168.100.80
+      - 192.168.100.81
+      - 192.168.100.82
+      - 192.168.100.12
+    
+## create databases ----------------------------------
+  - name: Create a new database with name 'nattawattour'
+    mysql_db:
+      name: database
+      state: present
+
+  # - name: Import tables to database  
+  #   mysql_db:
+  #     name: myuser
+  #     state: import
+  #     login_user: myuser 
+  #     login_password: "{{ 123456 }}"
+  #     target: /vagrant/ansible/captain/database/project.sql
+
+  - name: restart
+    service:
+      name: mariadb
+      state: restarted
+
+  
+  - name: start and enable firewalld
+    service:
+      name: firewalld
+      enabled: yes
+      state: started
+
+  - name: Open port tcp
+    firewalld:
+      port: '3306/tcp'
+      permanent: yes
+      state: enabled
+
+      
+
+  - name: restart  firewalld
+    service:
+      name: firewalld
+      state: restarted
+
+  
+
+
+
+  
+- hosts: web
+  become: yes
+  become_user: root
+  tasks:
+  
+  - name: copy file wordpress to web path directory
+    command: rsync -a /vagrant/ansible/captain/database/html /var/nfs/www/captain.com/
+
+  - name: chang permission directory captain web
+    command: chown -R root:root /var/nfs/www/captain.com/html
+    args:
+      warn: false
+
+  - name: chang permission directory captain web
+    command: chmod -R 755 /var/nfs/www/captain.com/html
+    args:
+      warn: false
+
+  - name: Restart service httpd
+    service:
+      name: httpd
+      state: restarted

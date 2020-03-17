@@ -1,0 +1,20 @@
+$TTL    604800
+@       IN      SOA     ns1.captain.com. root.captain.com. (
+          2019021802     ; Serial
+              604800     ; Refresh
+               86400     ; Retry
+             2419200     ; Expire
+              604800 )   ; Negative Cache TTL
+;
+; name servers - NS records
+     IN      NS      ns1.captain.com.
+; name servers - A records
+ns1.captain.com.               IN      A       192.168.100.11
+ansible-mgn       IN      A       192.168.100.11
+server-01         IN      A       192.168.100.80
+server-02         IN      A       192.168.100.81
+server-03         IN      A       192.168.100.82
+server-04         IN      A       192.168.100.70
+www               IN      CNAME   server-01
+WEB-01            IN      CNAME   server-02
+WEB-02            IN      CNAME   server-03

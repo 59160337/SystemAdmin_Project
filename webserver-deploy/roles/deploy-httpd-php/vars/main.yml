@@ -1,0 +1,3 @@
+---
+# vars file for deploy-httpd-php
+php_version: 72

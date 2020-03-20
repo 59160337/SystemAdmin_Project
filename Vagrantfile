@@ -15,7 +15,7 @@ Vagrant.configure("2") do |config|
     { :name => "server-01", :ip => "192.168.100.80" },
     { :name => "server-02", :ip => "192.168.100.81" },
     { :name => "server-03", :ip => "192.168.100.82" },
-    { :name => "server-04", :ip => "192.168.100.70" },
+    { :name => "server-04", :ip => "192.168.100.12" },
   ]
 
   boxes.each do |opts|

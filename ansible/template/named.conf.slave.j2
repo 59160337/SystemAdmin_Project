@@ -1,11 +1,11 @@
 zone "thisismyproject.com" IN {
-    type master;
+    type slave;
     file "/etc/named/zones/db.thisismyproject.com"; # zone file path
-    allow-update { none; };
+    masters { 192.168.100.11; };
 };
 
 zone "100.168.192.in-addr.arpa" IN {
-    type master;
+    type slave;
     file "/etc/named/zones/db.192.168.100";  # 192.168.100.0/24 subnet
-    allow-update { none; };
+    masters { 192.168.100.11; };
 };

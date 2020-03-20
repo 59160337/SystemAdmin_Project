@@ -1,16 +1,17 @@
 $TTL    604800
-@       IN      SOA     ns1.captain.com. root.captain.com. (
-          2019021801     ; Serial
-              604800     ; Refresh
-               86400     ; Retry
-             2419200     ; Expire
-              604800 )   ; Negative Cache TTL
+@       IN      SOA     ns1.thisismyproject.com. root.thisismyproject.com. (
+         2020031601      ; Serial
+             604800     ; Refresh
+              86400     ; Retry
+            2419200     ; Expire
+             604800 )   ; Negative Cache TTL
 ;
 ; name servers - NS records
-     IN      NS      ns1.captain.com.
+     IN      NS      ns1.thisismyproject.com.
+
 ; name servers - PTR records
-11          IN      PTR       ansible-mgn.captain.com.
-80          IN      PTR       server-01.captain.com.
-81          IN      PTR       server-02.captain.com.
-82          IN      PTR       server-03.captain.com.
-70          IN      PTR       server-04.captain.com.
+11                   IN      PTR       myProject-mgn.thisismyproject.com.
+80                   IN      PTR       myProject-server-01.thisismyproject.com.
+81                   IN      PTR       myProject-server-02.thisismyproject.com.
+82                   IN      PTR       myProject-server-03.thisismyproject.com.
+12                   IN      PTR       myProject-server-04.thisismyproject.com.

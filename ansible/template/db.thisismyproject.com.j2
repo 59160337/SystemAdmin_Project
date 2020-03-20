@@ -1,0 +1,23 @@
+$TTL    604800
+@       IN      SOA     ns1.thisismyproject.com. root.thisismyproject.com. (
+         2020031601      ; Serial
+             604800     ; Refresh
+              86400     ; Retry
+            2419200     ; Expire
+             604800 )   ; Negative Cache TTL
+;
+; name servers - NS records
+     IN      NS      ns1.thisismyproject.com.
+
+; name servers - A records
+ns1.thisismyproject.com.          IN      A       192.168.100.11
+
+
+thisismyproject-mgn                         IN      A       192.168.100.11
+thisismyproject-server-01                   IN      A       192.168.100.80
+thisismyproject-server-02                   IN      A       192.168.100.81
+thisismyproject-server-03                   IN      A       192.168.100.82
+thisismyproject-server-04                   IN      A       192.168.100.12
+www                         IN      CNAME   thisismyproject-server-01
+WEB-01                      IN      CNAME   thisismyproject-server-02
+WEB-02                      IN      CNAME   thisismyproject-server-03

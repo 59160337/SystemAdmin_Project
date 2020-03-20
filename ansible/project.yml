@@ -1,0 +1,949 @@
+---
+- hosts: all
+  become: yes
+  become_user: root
+
+  tasks:
+  - name: Install chrony 
+    dnf:
+      name: chrony 
+      state: latest
+
+  - name: Copy NTP Client Config Template
+    template:
+      src: 'template/ntp-client.conf.j2'
+      dest: '/etc/chrony.conf'
+      owner: root
+      group: root
+      mode: 0755 
+      
+  - name: Copy NTP Server Config Template
+    template:
+      src: 'template/ntp-server.conf.j2'
+      dest: '/etc/chrony.conf'
+      owner: root
+      group: root
+      mode: 0755
+    when: ansible_connection == 'local'
+
+  - name: Start firewall
+    service:
+      name: firewalld
+      state: started
+
+  - name: Open firewall for NTP 
+    firewalld:
+      service: ntp
+      permanent: yes
+      state: enabled
+
+  - name: Restart firewall
+    service:
+      name: firewalld
+      state: restarted
+
+  - name: Start chrony service
+    service:
+      name: chronyd
+      state: restarted
+
+  - name: set time zone to Asia/Bangkok
+    timezone:
+      name: Asia/Bangkok
+      
+#DNS
+    #Master DNS Server
+- hosts: ansible-mgn
+  become: yes
+  become_user: root
+  tasks:
+    - name: Install Bind 
+      yum:
+        name: bind
+        state: latest
+
+    - name: Edit nameserver listen IP Address
+      lineinfile: 
+        path: /etc/named.conf 
+        regexp: 'listen-on port 53 { 127.0.0.1; };' 
+        line: '        listen-on port 53 { 127.0.0.1; 192.168.100.11;};' 
+        backup: yes
+
+    # - name: Edit binding IPV6 service to any
+    #   shell:
+    #     cmd: sed -i 's/::1/any/' /etc/named.conf
+  
+    - name: Edit nameserver allow query
+      lineinfile: 
+        path: /etc/named.conf 
+        regexp: 'allow-query     { localhost; };' 
+        line: '        allow-query     { any; };' 
+        backup: yes
+
+    - name: Edit nameserver allow transfer
+      lineinfile: 
+        path: /etc/named.conf 
+        insertafter: 'allow-query     { any; };' 
+        line: '        allow-transfer     { 192.168.100.12; };' 
+        backup: yes
+
+    # - name: disable recursion
+    #   lineinfile:
+    #     path: /etc/named.conf
+    #     regexp: 'recursion yes;'
+    #     line: '        recursion no;'
+
+    - name: Edit nameserver include zone files;
+      lineinfile: 
+        path: /etc/named.conf 
+        line: 'include "/etc/named/named.conf.local";' 
+        backup: yes
+  
+    - name: Change Permission directory /etc/named
+      file:
+        path: /etc/named
+        state: directory
+        mode: 0755
+  
+    - name: Copy include Zone file to /etc/named 
+      template:
+        src: 'template/named.conf.local.j2'
+        dest: '/etc/named/named.conf.local'
+        owner: root
+        group: root
+        mode: "0755"
+  
+    - name: Create Zones directory in /etc/named
+      file:
+        path: /etc/named/zones
+        state: directory
+        mode: 0755
+  
+    - name: Copy forward and reverse zone file to /etc/named/zones
+      template:
+        src: '{{ item.source }}'
+        dest: '{{ item.destination }}'
+        owner: root
+        group: root
+        mode: "0755"
+        force: yes
+      loop:
+      - { source: 'template/db.thisismyproject.com.j2', destination: '/etc/named/zones/db.thisismyproject.com' }
+      - { source: 'template/db.192.168.100.j2', destination: '/etc/named/zones/db.192.168.100' }
+
+    - name: Set Default Name Server
+      template:
+        src: 'template/resolv.conf.j2'
+        dest: '/etc/resolv.conf'
+        owner: root
+        group: root
+        mode: 0775
+  
+    # - name: Start Named Service
+    #   service: 
+    #     name: named 
+    #     state: started
+
+    # - name: Enable Named Service
+    #   service:
+    #     name: named
+    #     enabled: yes
+  
+    - name: Start firewalld Service
+      service: 
+        name: firewalld 
+        state: started
+  
+    - name: Open firewall 53 tcp and 53 udp
+      firewalld: 
+        port: '{{ item }}'
+        permanent: yes 
+        state: enabled
+      loop:
+        - "53/udp"
+        - "53/tcp"
+  
+    - name: Restart firewalld service
+      service: 
+        name: firewalld 
+        state: restarted
+
+    - name: Start Named Service
+      service: 
+        name: named 
+        state: started
+
+    - name: Enable Named Service
+      service:
+        name: named
+        enabled: yes
+
+    #Slave DNS Server
+- hosts: server-04
+  become: yes
+  become_user: root 
+  tasks:
+  - name: Install Bind 
+    yum:
+      name: bind
+      state: latest
+
+  - name: Edit nameserver listen IP Address
+    lineinfile: 
+      path: /etc/named.conf 
+      regexp: 'listen-on port 53 { 127.0.0.1; };' 
+      line: '        listen-on port 53 { any;};' 
+      backup: yes
+
+  # - name: Edit binding IPV6 service to any
+  #   shell:
+  #     cmd: sed -i 's/::1/any/' /etc/named.conf
+
+  - name: Edit nameserver allow query
+    lineinfile: 
+      path: /etc/named.conf 
+      regexp: 'allow-query     { localhost; };' 
+      line: '        allow-query     { any; };' 
+      backup: yes
+
+  - name: Edit nameserver include zone files;
+    lineinfile: 
+      path: /etc/named.conf 
+      line: 'include "/etc/named/named.conf.slave";' 
+      backup: yes
+
+  - name: Change Permission directory /etc/named
+    file:
+      path: /etc/named
+      state: directory
+      mode: 0755
+
+  - name: Copy include Zone file to /etc/named 
+    template:
+      src: 'template/named.conf.slave.j2'
+      dest: '/etc/named/named.conf.slave'
+      owner: root
+      group: root
+      mode: "0755"
+
+  - name: Set Default Name Server
+    template:
+      src: 'template/resolv.conf.slave.j2'
+      dest: '/etc/resolv.conf'
+      owner: root
+      group: root
+      mode: 0775
+    
+      # - name: Create Zones directory in /etc/named
+      #   file:
+      #     path: /etc/named/zones
+      #     state: directory
+      #     mode: 0755
+    
+      # - name: Copy forward and reverse zone file to /etc/named/zones
+      #   template:
+      #     src: '{{ item.source }}'
+      #     dest: '{{ item.destination }}'
+      #     owner: root
+      #     group: root
+      #     mode: "0755"
+      #     force: yes
+      #   loop:
+      #   - { source: 'template/db.thisismyproject.com.j2', destination: '/etc/named/zones/db.thisismyproject.com' }
+      #   - { source: 'template/db.192.168.100.j2', destination: '/etc/named/zones/db.192.168.100' }
+    
+  - name: Start Named Service
+    service: 
+      name: named 
+      state: started
+
+  - name: Start firewalld Service
+    service: 
+      name: firewalld 
+      state: started
+
+  - name: Open firewall 53 tcp and 53 udp
+    firewalld: 
+      port: '{{ item }}'
+      permanent: yes 
+      state: enabled
+    loop:
+      - "53/udp"
+      - "53/tcp"
+
+  - name: Restart firewalld service
+    service: 
+      name: firewalld 
+      state: restarted
+
+  - name: Start Named Service
+    service: 
+      name: named 
+      state: started
+
+  - name: Enable Named Service
+    service:
+      name: named
+      enabled: yes
+  # - name: Copy resolv file nameserver
+  #   template:
+  #     src: template/resolv.conf.j2
+  #     dest: /etc/resolv.conf
+  #     owner: root
+  #     group: root
+
+  # - name: Install Bind at ansible-mgn
+  #   yum: 
+  #     name: bind 
+  #     state: latest
+  #   when: ansible_connection == 'local'
+
+  # - name: Edit nameserver listen IP Address
+  #   lineinfile:
+  #     path: /etc/named.conf
+  #     regexp: 'listen-on port 53 { 127.0.0.1; };'
+  #     line: '        listen-on port 53 { 127.0.0.1; 192.168.100.11;};'
+  #     backup: yes
+  #   when: ansible_connection == 'local'
+
+  # - name : Edit nameserver allow query
+  #   lineinfile:
+  #     path: /etc/named.conf
+  #     regexp: 'allow-query     { localhost; };'
+  #     line: '        allow-query   { any; };'
+  #     backup: yes
+  #   when: ansible_connection == 'local'
+
+  # - name : Include named local
+  #   lineinfile:
+  #     path: /etc/named.conf
+  #     line: 'include  "/etc/named/named.conf.local";'
+  #     backup: yes
+  #   when: ansible_connection == 'local'
+
+  # - name : Copy named.con.local file
+  #   template:
+  #     src: template/named.conf.local.j2
+  #     dest: /etc/named/named.conf.local
+  #     owner: root
+  #     group: root 
+  #     mode: 0755 
+  #     backup: yes
+  #   when: ansible_connection == 'local'
+
+  # - name : Create Zones Directory in /etc/named
+  #   file:
+  #     path: /etc/named/zones
+  #     state: directory
+  #     mode: 0755  
+  #   when: ansible_connection == 'local'  
+
+  # - name : Create Zones Directory in /etc/named
+  #   template:
+  #     src: '{{ item.source }}'
+  #     dest: '{{ item.destination }}'
+  #     owner: root
+  #     group: root      
+  #     mode: 0755  
+  #   loop:
+  #   - { source: 'template/db.thisismyproject.com.j2', destination: '/etc/named/zones/db.captain.com' }
+  #   - { source: 'template/db.192.168.100.j2', destination: '/etc/named/zones/db.192.168.100' }
+  #   when: ansible_connection == 'local'  
+  
+  # - name : Start Service
+  #   service:
+  #     name: named
+  #     state: started 
+  #   when: ansible_connection == 'local'
+
+  # - name: Install firewalld
+  #   yum: 
+  #     name: firewalld 
+  #     state: latest
+  #   when: ansible_connection == 'local'
+
+  # - name: Start firewalld
+  #   service: 
+  #     name: firewalld 
+  #     state: started
+  #   when: ansible_connection == 'local' 
+
+  # - name: Open firewall
+  #   firewalld: 
+  #     port: '{{ item }}'
+  #     permanent: yes 
+  #     state: enabled
+  #   loop: 
+  #   - "53/udp"
+  #   - "53/tcp"
+  #   when: ansible_connection == 'local' 
+
+  # - name: Restart firewalld
+  #   service: 
+  #     name: firewalld 
+  #     state: restarted
+  #   when: ansible_connection == 'local'
+
+  # - name:  Resolv template 
+  #   template: 
+  #     src: template/resolv.conf.j2
+  #     dest: /etc/resolv.conf
+  #     owner: root
+  #     group: root      
+  #     mode: "0644"
+
+  # - name: Install Bind-util 
+  #   yum: 
+  #     name: bind-utils 
+  #     state: latest
+
+  # # - name: Check
+  # #   command: nslookup ansible-mgn.captain.com
+  # #   register: myoutput
+  # # - debug: msg="{{ myoutput.stdout }}" 
+  
+- hosts: db
+  become: yes
+  become_user: root
+  tasks:
+  - name: Install MariaDB 
+    yum:
+      name: mariadb-server
+      state: latest
+
+  - name: Enable MariaDB 
+    service: 
+      name: mariadb
+      enabled: yes
+
+  - name: Start MariaDB 
+    service: 
+      name: mariadb 
+      state: started
+  
+  - name: Install NFS
+    yum:
+      name: nfs-utils
+      state: latest
+  
+  - name : Include NFS share
+    lineinfile:
+      path: /etc/exports
+      line: '/var/nfs *(rw,sync,no_root_squash,no_all_squash)'
+      backup: yes
+
+  - name: Create directory nfs
+    file: 
+      path: /var/nfs
+      state: directory
+      owner: root
+      group: root
+      mode: 0755
+
+  - name: Create directory www
+    file: 
+      path: /var/nfs/{{ item }}
+      state: directory
+      owner: root
+      group: root
+      mode: 0755
+    loop:
+      - thisismyproject.com/html
+      - thisismyproject.com/log
+
+  - name: Enable rpcbind
+    service: 
+      name: rpcbind 
+      enabled: yes
+
+  - name: Enable nfs-server
+    service: 
+      name: nfs-server
+      enabled: yes
+
+  # - name: Enable nfs-lock
+  #   service: 
+  #     name: nfs-lock
+  #     enabled: yes
+  
+  - name: Start rpcbind
+    service: 
+      name: rpcbind
+      state: started
+  
+  - name: Start nfs-server
+    service: 
+      name: nfs-server
+      state: started
+
+  # - name: Start nfs-lock
+  #   service: 
+  #     name: nfs-lock
+  #     state: started
+
+  - name: Install firewalld
+    yum: 
+      name: firewalld 
+      state: latest
+
+  - name: Enable firewalld
+    service: 
+      name: firewalld 
+      enabled: yes
+
+  - name: Start firewalld
+    service: 
+      name: firewalld 
+      state: started
+
+  - name: Open firewall
+    firewalld: 
+      port: "3306/tcp"
+      permanent: yes 
+      state: enabled
+
+  - name: Open nfs,mountd,rpc
+    firewalld: 
+      service: '{{ item }}'
+      permanent: yes 
+      state: enabled
+    loop:
+    - nfs
+    - mountd
+    - rpc-bind
+
+  - name: Restart firewalld
+    service: 
+      name: firewalld 
+      state: restarted 
+  
+  - name: Copy Index Template to NFS 
+    template:
+      src: template/index.php.j2
+      dest: /var/nfs/thisismyproject.com/html/index.php
+
+- hosts: web
+  become: yes
+  become_user: root
+  tasks:
+  - name: Install remi repo.
+    yum:
+      name:  http://rpms.remirepo.net/enterprise/remi-release-8.rpm 
+      state: latest
+
+  - name: Import remi GPG key.
+    rpm_key:
+      key: http://rpms.remirepo.net/RPM-GPG-KEY-remi
+      state: present
+
+  - name: Install php
+    yum:
+      name: 
+        - httpd
+        - php
+        - php-cli 
+        - php-fpm 
+        - php-mysqlnd 
+        - php-zip 
+        - php-devel 
+        - php-gd 
+        - php-mbstring 
+        - php-curl 
+        - php-xml 
+        - php-pear 
+        - php-bcmath 
+        - php-json
+      state: latest
+      enablerepo: remi-php73
+  
+  - name: Edit time zone
+    lineinfile:
+      path: /etc/php.ini
+      regexp: ';date.timezone'
+      line: 'date.timezone = Asia/Bangkok'
+      backup: yes
+
+  - name : Create Zones Directory in /etc/named
+    template:
+      src: template/enablevhost.conf.j2
+      dest: /etc/httpd/conf/enablevhost.conf
+      owner: root
+      group: root      
+      mode: 0755 
+  
+  - name: Install nfs-utils
+    yum:
+      name: nfs-utils
+      state: latest
+
+  - name: Start nfs-server
+    service: 
+      name: nfs-server
+      state: started
+
+  - name: Create directory nfs/www
+    file: 
+      path: /var/nfs/www
+      state: directory
+      owner: root
+      group: root
+      mode: 0755
+      
+  - name : Create html.log for Web Server 1
+    template:
+      src: template/server01mynet-486.com.conf.j2
+      dest: /etc/httpd/conf.d/thisismyproject.com.conf
+      owner: root
+      group: root      
+      mode: 0755  
+    when: ansible_ssh_host == '192.168.100.81'
+  
+  - name : Create html.log for Web Server 2
+    template:
+      src:  template/server01mynet-486.com.conf.j2
+      dest: /etc/httpd/conf.d/thisismyproject.com.com.conf
+      owner: root
+      group: root      
+      mode: 0755  
+    when: ansible_ssh_host == '192.168.100.82'
+  
+  - name: Enable Apache
+    service: 
+      name: httpd
+      enabled: yes
+      
+  - name: Mount Directory 
+    command: mount 192.168.100.12:/var/nfs /var/nfs/www
+
+  - name: Start Apache
+    service: 
+      name: httpd
+      state: started
+
+  - name: Install firewalld
+    yum: 
+      name: firewalld 
+      state: latest
+
+  - name: Enable firewalld
+    service: 
+      name: firewalld 
+      enabled: yes
+
+  - name: Start firewalld
+    service: 
+      name: firewalld 
+      state: started
+
+  - name: Open firewall
+    firewalld: 
+      port: '{{ item }}'
+      permanent: yes 
+      state: enabled
+    loop: 
+    - "80/tcp"
+    - "443/tcp"
+
+  - name: Restart firewalld
+    service: 
+      name: firewalld 
+      state: restarted
+
+  - name:  index template 
+    template: 
+      src: template/index.php.j2
+      dest: /var/www/html/index.php
+      owner: root
+      group: root      
+      mode: "0755"
+        
+  - name: Restart Apache
+    service: 
+      name: httpd
+      state: restarted
+
+- hosts: lb
+  become: yes
+  become_user: root
+  tasks:
+
+  - name: Install nginx
+    yum:
+      name: nginx
+      state: latest
+  
+  - name: Start nginx
+    service: 
+      name: nginx
+      state: started
+
+  - name: Template mynet to /etc/nginx/conf.d
+    template:
+      src: template/thisismyproject.conf.j2
+      dest: /etc/nginx/conf.d/thisismyproject.conf
+  - name: Install firewalld
+    yum: 
+      name: firewalld 
+      state: latest
+
+  - name: Enable firewalld
+    service: 
+      name: firewalld 
+      enabled: yes
+
+  - name: Start firewalld
+    service: 
+      name: firewalld 
+      state: started
+
+  - name: Open firewall
+    firewalld: 
+      port: '{{ item }}'
+      permanent: yes 
+      state: enabled
+    loop: 
+    - "80/tcp"
+    - "443/tcp"
+  - name: Restart firewalld
+    service: 
+      name: firewalld 
+      state: restarted
+      
+  - name: Restart nginx
+    service: 
+      name: nginx
+      state: restarted
+      
+- hosts: all
+  become: yes
+  become_user: root
+
+  tasks:
+  - name: Install rsyslog
+    yum:
+      name: rsyslog
+      state: latest
+
+  - name: start rsyslog
+    service:
+      name: rsyslog
+      state: started
+
+  - name: Enable rsyslog
+    service: 
+      name: rsyslog 
+      enabled: yes
+
+  - name : Copy Rsyslog Config  
+    template:
+      src: template/rsyslog.conf
+      dest: /etc/rsyslog.conf
+      owner: root
+      group: root      
+      mode: 0755 
+    when: ansible_connection == 'local'
+
+  - name: Install firewalld
+    yum: 
+      name: firewalld 
+      state: latest
+    when: ansible_connection == 'local'
+
+  - name: Enable firewalld
+    service: 
+      name: firewalld 
+      enabled: yes
+    when: ansible_connection == 'local'
+
+  - name: Start firewalld
+    service: 
+      name: firewalld 
+      state: started
+    when: ansible_connection == 'local'
+
+  - name: Open firewall
+    firewalld: 
+      port: '{{ item }}'
+      permanent: yes 
+      state: enabled
+    loop: 
+    - "514/tcp"
+    - "514/udp"
+    when: ansible_connection == 'local'
+  - name: Restart firewalld
+    service: 
+      name: firewalld 
+      state: restarted
+    when: ansible_connection == 'local'
+  - name: restart rsyslog
+    service:
+      name: rsyslog
+      state: restarted
+    when: ansible_connection == 'local'
+
+- hosts: myserver
+  become: yes
+  become_user: root
+  tasks:
+  - name: Install httpd
+    yum:
+      name: httpd
+      state: latest
+
+  - name: Enable service httpd
+    service:
+      name: httpd
+      enabled: yes
+
+  # - name: Start service httpd
+  #   service: 
+  #     name: httpd
+  #     state: started
+
+  - name: Edit Files for UDP Protocol
+    lineinfile:
+      path: /etc/rsyslog.conf
+      line: 'action(type="omfwd" Target="192.168.100.11" Port="514" Protocol="udp")'
+
+  - name: Edit Files for TCP Protocol
+    lineinfile:
+      path: /etc/rsyslog.conf
+      line: 'action(type="omfwd" Target="192.168.100.11" Port="514" Protocol="tcp")'
+
+  - name: Config Custom Log in httpd.conf
+    lineinfile:
+      path: /etc/httpd/conf/httpd.conf
+      regexp: '^CustomLog "logs/access_log" combined'
+      line: CustomLog "| /bin/sh -c '/usr/bin/tee -a /var/log/httpd/httpd-access.log | /usr/bin/logger -thttpd -plocal1.notice'" combined''
+    
+
+  # - name: Add Action to /etc/rsyslog.conf 
+  #   lineinfile:
+  #     dest: /etc/rsyslog.conf 
+  #     line: action(type="omfwd" Target="192.168.137.11" Port="514" Protocol="udp")
+  #     owner: root
+    
+  # - name: Add Action to /etc/rsyslog.conf 
+  #   lineinfile:
+  #     dest: /etc/rsyslog.conf 
+  #     line: action(type="omfwd" Target="192.168.137.11" Port="514" Protocol="tcp")
+  #     owner: root
+
+  #   - name: Restart Firewall
+  #     service:
+  #       name: firewalld
+  #       state: restarted
+
+  - name: Restart rsyslog
+    service: 
+      name: rsyslog
+      state: restarted
+
+  - name: Enable Firewall
+    service: 
+      name: firewalld
+      enabled: yes
+
+  - name: Open Port 514/TCP
+    command: firewall-cmd --permanent --add-port=514/tcp
+
+  - name: Open Port 514/UDP
+    command: firewall-cmd --permanent --add-port=514/udp
+
+  - name: Reload Firewall
+    service:
+      name: firewalld
+      state: restarted
+  ####################################
+
+- hosts: db ## nfs server and database server [12]
+  become: yes
+  become_user: root
+  tasks:
+
+#------------- db -----------------------
+  - name: Install mariadb
+    dnf:
+      name: 
+      - mariadb-server
+      - python3-PyMySQL
+      state: latest
+
+  - name: start and enable mariadb
+    service:
+      name: mariadb
+      state: started
+      enabled: yes
+
+  - name: set user to web server
+    mysql_user:
+      name: myuser
+      host: "{{ item }}"      
+      password: "123456"
+      priv: '*.*:ALL,GRANT'
+      state : present
+    loop:
+      - localhost
+      - 192.168.100.80
+      - 192.168.100.81
+      - 192.168.100.82
+      - 192.168.100.12
+    
+## create databases ----------------------------------
+  - name: Create a new database 
+    mysql_db:
+      name: database
+      state: present
+
+  - name: Import tables to database  
+    mysql_db:
+      name: project
+      state: import
+      login_user: myuser 
+      login_password: "{{ 123456 }}"
+      target: /vagrant/ansible/thisismyproject/database/data.sql
+
+  - name: restart
+    service:
+      name: mariadb
+      state: restarted
+
+  - name: start and enable firewalld
+    service:
+      name: firewalld
+      enabled: yes
+      state: started
+
+  - name: Open port tcp
+    firewalld:
+      port: '3306/tcp'
+      permanent: yes
+      state: enabled
+
+  - name: restart  firewalld
+    service:
+      name: firewalld
+      state: restarted
+
+- hosts: web
+  become: yes
+  become_user: root
+  tasks:
+  
+  - name: copy file to web path directory
+    command: rsync -a /vagrant/ansible/thisismyproject/database/html /var/nfs/www/thisismyproject.com/
+
+  - name: chang permission of web directory 
+    command: chown -R root:root /var/nfs/www/thisismyproject.com/html
+    args:
+      warn: false
+
+  - name: chang permission directory thisismyproject web
+    command: chmod -R 755 /var/nfs/www/thisismyproject.com/html
+    args:
+      warn: false
+
+  - name: Restart service httpd
+    service:
+      name: httpd
+      state: restarted

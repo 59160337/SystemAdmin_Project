@@ -1,12 +1,12 @@
 <VirtualHost *:80>
-    ServerName captain.com
-    ServerAlias www.captain.com
-    DocumentRoot /var/nfs/www/captain.com/html
-    <Directory /var/nfs/www/captain.com/html>
+    ServerName thisismyproject.com
+    ServerAlias www.thisismyproject.com
+    DocumentRoot /var/nfs/www/thisismyproject.com/html
+    <Directory /var/nfs/www/thisismyproject.com/html>
         Options -Indexes +FollowSymLinks +MultiViews
         AllowOverride All
         Require all granted
     </Directory>
-    ErrorLog /var/nfs/www/captain.com/log/error.log
-    CustomLog "| /bin/sh -c '/usr/bin/tee -a /var/nfs/www/captain.com/log/requests.log | /usr/bin/logger -thttpd_captain -plocal1.notice'" combined
+    ErrorLog /var/nfs/www/thisismyproject.com/log/error.log
+    CustomLog "| /bin/sh -c '/usr/bin/tee -a /var/nfs/www/thisismyproject.com/log/requests.log | /usr/bin/logger -thttpd_captain -plocal1.notice'" combined
 </VirtualHost>
